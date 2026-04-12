@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Strength + CrossFit Tracker</title>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#F5F5F0;--surface:#FFF;--card:#FFF;--border:#D4D4D0;--text:#1A1A1A;--muted:#6B7280;--dim:#9CA3AF;--success:#16A34A;--warning:#D97706;--danger:#DC2626;--phase-color:#2563EB;--phase-accent:#1D4ED8}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Barlow Condensed',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;-webkit-font-smoothing:antialiased}
+input,select,textarea,button{font-family:inherit}
+input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none}
+input[type=number]{-moz-appearance:textfield}
+.app{max-width:520px;margin:0 auto;min-height:100vh;display:flex;flex-direction:column}
+.nav{display:flex;border-bottom:2px solid var(--border);background:var(--surface);position:sticky;top:0;z-index:50}
+.nav button{flex:1;padding:11px 2px;background:none;border:none;border-bottom:3px solid transparent;color:var(--muted);cursor:pointer;font-size:11px;font-weight:700;letter-spacing:.8px}
+.nav button.active{color:var(--phase-color);border-bottom-color:var(--phase-color)}
+.content{flex:1;padding:14px}
+.card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:12px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+.btn{display:block;width:100%;padding:12px;border-radius:8px;border:2px solid var(--border);background:var(--surface);color:var(--text);font-size:14px;font-weight:700;letter-spacing:1px;cursor:pointer;text-align:center}
+.btn:disabled{opacity:.4;cursor:default}
+.input{width:100%;background:var(--bg);border:2px solid var(--border);color:var(--text);padding:8px 10px;border-radius:6px;font-size:15px;font-weight:700;font-family:'JetBrains Mono',monospace;text-align:center}
+.input:focus{outline:none;border-color:var(--phase-color)}
+.badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:700;letter-spacing:1px}
+.toast{position:fixed;top:16px;left:50%;transform:translateX(-50%);background:var(--text);color:var(--bg);padding:10px 20px;border-radius:8px;font-size:13px;font-weight:700;z-index:999;letter-spacing:1px;animation:sd .3s ease}
+@keyframes sd{from{opacity:0;transform:translateX(-50%) translateY(-20px)}}
+.progress-bar-bg{height:8px;background:var(--border);border-radius:4px;overflow:hidden}
+.progress-bar-fill{height:100%;border-radius:4px}
+.set-check{appearance:none;-webkit-appearance:none;width:24px;height:24px;border:2px solid var(--border);border-radius:5px;cursor:pointer;position:relative;background:var(--surface)}
+.set-check:checked{background:var(--success);border-color:var(--success)}
+.set-check:checked::after{content:'\2713';position:absolute;top:0;left:4px;color:#fff;font-size:15px;font-weight:800}
+.toggle-track{width:44px;height:24px;border-radius:12px;position:relative;cursor:pointer;flex-shrink:0}
+.toggle-thumb{width:20px;height:20px;border-radius:10px;background:white;position:absolute;top:2px;box-shadow:0 1px 3px rgba(0,0,0,.2)}
+.timer-display{font-size:48px;font-weight:800;font-family:'JetBrains Mono',monospace;letter-spacing:2px}
+.source-section h3{font-size:15px;font-weight:800;margin-bottom:6px}
+.source-section p{font-size:13px;line-height:1.7}
+.source-ref{font-size:11px;color:var(--muted);font-style:italic;margin-top:4px;line-height:1.5}
+</style>
+</head>
+<body>
+<div id="app" class="app"></div>
+<script>
+
+const DEFAULT_1RM={power_clean:70,back_squat:120,deadlift:160,military:50,bench:80,pull_ups:20,dips:20};
+const INCREMENTS={power_clean:1.25,back_squat:2.5,deadlift:2.5,military:0.75,bench:2.5,pull_ups:1.0,dips:1.0};
+const PHASE_CEIL={power_clean:[.80,.87,.88],back_squat:[.82,.92,.95],deadlift:[.83,.92,.95],military:[.80,.87,.88],bench:[.82,.92,.95],pull_ups:[.82,.92,.95],dips:[.82,.92,.95]};
+const REST_TIMES={power_clean:180,back_squat:180,deadlift:210,military:150,bench:150,pull_ups:120,dips:120,toes_bar:90,toes_bar_b:90};
+const PHASE_BANDS={
+  1:{A:{pct:[.72,.75,.78,.72],sets:[4,4,5,3],reps:{power_clean:3,back_squat:5,military:5,pull_ups:5}},B:{pct:[.74,.77,.80,.72],sets:[4,4,5,3],reps:{deadlift:4,bench:5,dips:7}}},
+  2:{A:{pct:[.83,.85,.88,.80],sets:[4,4,4,2],reps:{power_clean:2,back_squat:4,military:4,pull_ups:4}},B:{pct:[.78,.80,.82,.75],sets:[5,5,4,3],reps:{deadlift:4,bench:5,dips:7}}},
+  3:{A:{pct:[.88,.90,.93,.85],sets:[4,3,3,2],reps:{power_clean:2,back_squat:3,military:3,pull_ups:3}},B:{pct:[.90,.92,.95,.85],sets:[3,3,2,2],reps:{deadlift:3,bench:3,dips:5}}}
+};
+const T2B_REPS={A:[10,11,13,10,12,14,16,10,15,17,20,20],B:[10,11,12,8,11,13,15,8,14,16,18,18]};
+const T2B_SETS=[3,3,3,2,3,3,3,2,3,3,3,2];
+const DELOAD_WEEKS=[4,8,12];
+const PHASES=[
+  {id:1,name:"Accumulation",weeks:[1,2,3,4],rawColor:"#2563EB",rawAccent:"#1D4ED8",intensity:"70-80% 1RM",rpe:"7"},
+  {id:2,name:"Intensification",weeks:[5,6,7,8],rawColor:"#EA580C",rawAccent:"#C2410C",intensity:"80-90% 1RM",rpe:"8"},
+  {id:3,name:"Peaking",weeks:[9,10,11,12],rawColor:"#7C3AED",rawAccent:"#6D28D9",intensity:"87-97% 1RM",rpe:"9"}
+];
+const SESSION_A=[{ex:"power_clean",label:"Power Clean",notes:"Full catch, elbows high, reset each rep"},{ex:"back_squat",label:"Back Squat",notes:"Brace, bar on traps, knees track toes"},{ex:"military",label:"Military Press",notes:"No leg drive, elbows forward, lock out"},{ex:"pull_ups",label:"Weighted Pull-ups",notes:"Full ROM, pause at top, controlled descent"},{ex:"toes_bar",label:"Toes to Bar",notes:"Kip from shoulders - bodyweight only",bw:true}];
+const SESSION_B=[{ex:"deadlift",label:"Deadlift",notes:"Hip hinge, lats engaged, bar drags shins"},{ex:"bench",label:"Bench Press",notes:"Retract scapula, bar to sternum, leg drive"},{ex:"dips",label:"Weighted Dips",notes:"Forward lean = chest; upright = triceps"},{ex:"toes_bar_b",label:"Toes to Bar",notes:"Controlled eccentric, full hip flexion",bw:true}];
+const PLAN_B=[{ex:"power_clean",label:"Power Clean",notes:"Focus on technique"},{ex:"back_squat",label:"Back Squat",notes:"Reduce 1 set vs Session A"},{ex:"bench",label:"Bench Press",notes:"Moderate intensity"},{ex:"pull_ups",label:"Weighted Pull-ups",notes:"Controlled tempo"},{ex:"toes_bar",label:"Toes to Bar",notes:"Bodyweight, moderate reps",bw:true}];
+const WARMUP={A:"5 min row/bike > 10 hip circles/side > 10 leg swings/side > 5 Cossack squats/side > 3x3 muscle clean (empty bar) > 3x3 front squat (empty bar) > Build to working weight in 3-4 sets",B:"5 min row/bike > Cat-cow x10 > Band pull-aparts x15 > 10 RDLs (empty bar) > 3x5 bench press (empty bar) > Build to working weight in 3-4 sets",PlanB:"5 min row/bike > Full body mobility flow x5 min > 3x3 muscle clean + front squat (empty bar) > Build to working weight in 3 sets"};
+const COOLDOWN={A:"Hip flexor stretch 60s/side > Hamstring stretch 60s/side > Thoracic spine foam roll 2 min > Banded shoulder distraction 45s/side",B:"Lat stretch 60s/side > Chest opener on foam roller 90s > Glute stretch 60s/side > Wrist circles + flexor stretch 45s/side",PlanB:"Full body: hip flexors, hamstrings, lats, chest opener - 45s each side > Thoracic foam roll 2 min"};
+const RPE_LEGEND=[{val:"6",desc:"Light - could do 4+ more reps",color:"#16A34A"},{val:"7",desc:"Moderate - could do 3 more reps",color:"#65A30D"},{val:"7.5",desc:"Moderate-hard - could do 2-3 more",color:"#CA8A04"},{val:"8",desc:"Hard - could do 2 more reps",color:"#EA580C"},{val:"8.5",desc:"Very hard - could do 1-2 more",color:"#DC2626"},{val:"9",desc:"Near max - could do 1 more rep",color:"#B91C1C"},{val:"9.5",desc:"Max effort - maybe 1 more",color:"#7F1D1D"},{val:"10",desc:"True max - nothing left",color:"#450A0A"}];
+
+const r=(v,s=2.5)=>Math.round(v/s)*s;
+const getPhase=w=>PHASES.find(p=>p.weeks.includes(w))||PHASES[0];
+const getStep=ex=>(ex.includes("pull_ups")||ex.includes("dips")||ex.includes("military"))?1.25:2.5;
+const getExercises=t=>t==="A"?SESSION_A:t==="B"?SESSION_B:PLAN_B;
+const esc=s=>String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+
+const P="scf_";
+const ld=(k,fb)=>{try{const r=localStorage.getItem(P+k);return r?JSON.parse(r):fb}catch{return fb}};
+const sv=(k,v)=>{try{localStorage.setItem(P+k,JSON.stringify(v))}catch(e){console.error(e)}};
+
+function calcWeight(ex,week,sType,logs,base1rm,cfY){
+  if(ex==="toes_bar"||ex==="toes_bar_b")return null;
+  const phase=getPhase(week),isDeload=DELOAD_WEEKS.includes(week);
+  const wip=phase.weeks.indexOf(week),bk=sType==="PlanB"?"A":sType;
+  const band=PHASE_BANDS[phase.id]?.[bk];
+  if(!band)return r(base1rm[ex]*.72,getStep(ex));
+  const pct=band.pct[wip]||band.pct[0],oneRM=base1rm[ex]||DEFAULT_1RM[ex]||80;
+  const step=getStep(ex),inc=INCREMENTS[ex]||2.5;
+  if(isDeload||week===1){let w=r(oneRM*pct,step);if(cfY)w=r(w*.95,step);return w}
+  let lastW=null,lastRPE=null,lastOk=null;
+  for(let w=week-1;w>=1;w--){for(const t of["A","B","PlanB"]){const log=logs["w"+w+"_"+t];if(!log?.completed)continue;const sets=log.sets?.[ex]||[];const ws=sets.map(s=>parseFloat(s.weight)||0).filter(v=>v>0);if(!ws.length)continue;if(lastW===null){lastW=Math.max(...ws);const rpes=sets.map(s=>parseFloat(s.rpe)||0).filter(v=>v>0);lastRPE=rpes.length?rpes.reduce((a,b)=>a+b,0)/rpes.length:7.5;lastOk=sets.every(s=>parseInt(s.reps)>0)}}if(lastW!==null)break}
+  let holds=0,prev=null;
+  for(let w=week-1;w>=Math.max(1,week-3);w--){for(const t of["A","B","PlanB"]){const log=logs["w"+w+"_"+t];if(!log?.completed)continue;const sets=log.sets?.[ex]||[];const ws=sets.map(s=>parseFloat(s.weight)||0).filter(v=>v>0);if(!ws.length)continue;const top=Math.max(...ws);if(prev===null){prev=top;continue}if(top===prev)holds++}if(holds>=2)break}
+  if(lastW===null){let w=r(oneRM*pct,step);if(cfY)w=r(w*.95,step);return w}
+  let nw;
+  if(holds>=2)nw=r(lastW*.95,step);else if(!lastOk||lastRPE>=8.5)nw=lastW;else if(lastRPE<=7.0)nw=lastW+inc*2;else nw=lastW+inc;
+  const ceil=(PHASE_CEIL[ex]||[.82,.92,.95])[getPhase(week).id-1]||.95;
+  nw=Math.min(r(nw,step),r(oneRM*ceil,step));
+  if(cfY)nw=r(nw*.95,step);return nw
+}
+
+function buildSets(exObj,week,sType,logs,base1rm,cfY){
+  const phase=getPhase(week),wip=phase.weeks.indexOf(week),bk=sType==="PlanB"?"A":sType;
+  const band=PHASE_BANDS[phase.id]?.[bk];
+  if(exObj.bw){const tbk=exObj.ex==="toes_bar"?"A":"B";const reps=T2B_REPS[tbk][week-1]||10;const ns=T2B_SETS[week-1]||3;const adj=cfY?Math.max(6,Math.round(reps*.85)):reps;return Array.from({length:ns},()=>({weight:"BW",reps:String(adj),rpe:DELOAD_WEEKS.includes(week)?"6":phase.rpe,done:false}))}
+  const weight=calcWeight(exObj.ex,week,sType,logs,base1rm,cfY);
+  const reps=band?.reps?.[exObj.ex]||5;const ns=band?.sets?.[wip]||4;
+  const rpe=cfY?String(Math.max(6,parseFloat(DELOAD_WEEKS.includes(week)?"6":phase.rpe)-1)):(DELOAD_WEEKS.includes(week)?"6":phase.rpe);
+  return Array.from({length:ns},()=>({weight:String(weight),reps:String(reps),rpe,done:false}))
+}
+
+// Timer
+let TM={running:false,endTime:0,totalSec:0,exLabel:"",iid:null,wl:null};
+function startTimer(sec,label){stopTimer();TM.running=true;TM.endTime=Date.now()+sec*1000;TM.totalSec=sec;TM.exLabel=label;
+  if('wakeLock' in navigator){navigator.wakeLock.request('screen').then(wl=>{TM.wl=wl}).catch(()=>{})}
+  TM.iid=setInterval(()=>{const rem=Math.max(0,Math.ceil((TM.endTime-Date.now())/1000));updTimer(rem);if(rem<=0){stopTimer();playBeep();toast("Rest complete - go!")}},250);render()}
+function stopTimer(){if(TM.iid)clearInterval(TM.iid);TM.running=false;TM.iid=null;if(TM.wl){try{TM.wl.release()}catch(e){}TM.wl=null}}
+function updTimer(sec){const el=document.getElementById('td');if(el){const m=Math.floor(sec/60),s=sec%60;el.textContent=m+":"+String(s).padStart(2,"0")}const bar=document.getElementById('tb');if(bar){bar.style.width=((TM.totalSec-sec)/TM.totalSec*100)+"%"}}
+let audioCtx=null;
+function playBeep(){try{if(!audioCtx)audioCtx=new(window.AudioContext||window.webkitAudioContext)();const o=audioCtx.createOscillator(),g=audioCtx.createGain();o.connect(g);g.connect(audioCtx.destination);o.frequency.value=880;g.gain.setValueAtTime(.3,audioCtx.currentTime);g.gain.exponentialRampToValueAtTime(.001,audioCtx.currentTime+.5);o.start();o.stop(audioCtx.currentTime+.5)}catch(e){}}
+document.addEventListener('touchstart',function u(){if(!audioCtx)audioCtx=new(window.AudioContext||window.webkitAudioContext)();if(audioCtx.state==='suspended')audioCtx.resume();document.removeEventListener('touchstart',u)},{once:true});
+
+// State
+let S={tab:"schedule",week:ld("week",1),logs:ld("logs",{}),prs:ld("prs",{}),base1rm:ld("base1rm",{...DEFAULT_1RM}),cycle:ld("cycle",1),active:null,draft:null,toast:null,tto:null,cfYesterday:false,confirmReset:false,warmup:false,cooldown:false,editing:null,showRPE:false};
+function up(u){Object.assign(S,u);render()}
+function toast(m){if(S.tto)clearTimeout(S.tto);S.toast=m;S.tto=setTimeout(()=>{S.toast=null;render()},2500);render()}
+function persist(){sv("week",S.week);sv("logs",S.logs);sv("prs",S.prs);sv("base1rm",S.base1rm);sv("cycle",S.cycle)}
+function rpeColor(rpe){const v=parseFloat(rpe)||7;if(v<=6.5)return"#16A34A";if(v<=7.5)return"#65A30D";if(v<=8)return"#EA580C";if(v<=8.5)return"#DC2626";return"#7F1D1D"}
+
+function render(){
+  const phase=getPhase(S.week);
+  document.documentElement.style.setProperty("--phase-color",phase.rawColor);
+  document.documentElement.style.setProperty("--phase-accent",phase.rawAccent);
+  const app=document.getElementById("app");let h="";
+  if(S.toast)h+='<div class="toast">'+esc(S.toast)+'</div>';
+  if(S.active||S.editing){h+=renderLogger();app.innerHTML=h;bindLogger();return}
+  h+='<div style="padding:16px 16px 0;text-align:center"><div style="font-size:22px;font-weight:800;letter-spacing:3px;color:'+phase.rawColor+'">STRENGTH + CF</div><div style="font-size:11px;color:var(--muted);letter-spacing:2px;font-family:JetBrains Mono,monospace;margin-top:2px">CYCLE '+S.cycle+' &middot; '+phase.name.toUpperCase()+' &middot; '+phase.intensity+'</div></div>';
+  const tabs=[["schedule","SCHEDULE"],["log","HISTORY"],["progress","PROGRESS"],["source","SOURCE"],["settings","SETTINGS"]];
+  h+='<div class="nav">';for(const[id,lb]of tabs)h+='<button class="'+(S.tab===id?"active":"")+'" onclick="up({tab:\''+id+'\'})">'+lb+'</button>';h+='</div><div class="content">';
+  if(S.tab==="schedule")h+=renderSchedule(phase);
+  else if(S.tab==="log")h+=renderHistory(phase);
+  else if(S.tab==="progress")h+=renderProgress(phase);
+  else if(S.tab==="source")h+=renderSource(phase);
+  else if(S.tab==="settings")h+=renderSettings(phase);
+  h+='</div>';app.innerHTML=h;
+  if(S.tab==="progress")drawCharts(phase)
+}
+
+function renderSchedule(phase){
+  const isDeload=DELOAD_WEEKS.includes(S.week);
+  let h='<div style="display:flex;align-items:center;justify-content:center;gap:12px;margin-bottom:14px"><button style="background:var(--surface);border:2px solid var(--border);color:var(--text);width:36px;height:36px;border-radius:8px;cursor:pointer;font-size:18px;font-weight:700" onclick="up({week:Math.max(1,S.week-1)})">&lsaquo;</button><div style="text-align:center"><div style="font-size:24px;font-weight:800;color:'+phase.rawColor+'">WEEK '+S.week+'</div><div style="font-size:11px;color:var(--muted);font-family:JetBrains Mono,monospace">'+phase.name+' &middot; '+(isDeload?"DELOAD":phase.intensity)+'</div></div><button style="background:var(--surface);border:2px solid var(--border);color:var(--text);width:36px;height:36px;border-radius:8px;cursor:pointer;font-size:18px;font-weight:700" onclick="up({week:Math.min(12,S.week+1)})">&rsaquo;</button></div>';
+  const pct=(S.week/12)*100;
+  h+='<div style="margin-bottom:14px"><div class="progress-bar-bg"><div class="progress-bar-fill" style="width:'+pct+'%;background:'+phase.rawColor+'"></div></div></div>';
+  if(isDeload)h+='<div class="card" style="border-left:4px solid '+phase.rawColor+'"><div style="font-size:13px;color:'+phase.rawColor+';font-weight:700">&#9889; DELOAD WEEK</div><div style="font-size:12px;color:var(--muted);margin-top:4px">Same weights, reduced volume (-40% sets). Focus on movement quality.</div></div>';
+  const sessions=[{t:"A",lb:"SESSION A",desc:"Squat + Press + Olympic"},{t:"B",lb:"SESSION B",desc:"Deadlift + Bench + Dips"},{t:"PlanB",lb:"PLAN B",desc:"Full body - single session"}];
+  for(const s of sessions){
+    const key="w"+S.week+"_"+s.t;const log=S.logs[key];const done=log?.completed;const draft=log&&!log.completed;
+    h+='<div class="card" style="cursor:pointer;'+(done?"border-left:4px solid var(--success)":"")+'" onclick="startSession('+S.week+',\''+s.t+'\')">';
+    h+='<div style="display:flex;justify-content:space-between;align-items:center"><div><div style="font-size:16px;font-weight:800;color:'+(done?"var(--success)":phase.rawColor)+'">'+s.lb+'</div><div style="font-size:11px;color:var(--muted)">'+s.desc+'</div></div>';
+    h+=done?'<span class="badge" style="background:var(--success);color:#fff">DONE &#10003;</span>':draft?'<span class="badge" style="background:var(--warning);color:#fff">DRAFT</span>':'<span class="badge" style="background:var(--border);color:var(--muted)">START &rarr;</span>';
+    h+='</div>';
+    const exs=getExercises(s.t);h+='<div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:4px">';
+    for(const ex of exs){if(ex.bw){const reps=T2B_REPS[ex.ex==="toes_bar"?"A":"B"][S.week-1]||10;h+='<span style="font-size:10px;color:var(--muted);background:var(--bg);padding:2px 6px;border-radius:3px;border:1px solid var(--border)">'+ex.label+': BW&times;'+reps+'</span>'}else{const w=calcWeight(ex.ex,S.week,s.t,S.logs,S.base1rm,false);h+='<span style="font-size:10px;color:var(--muted);background:var(--bg);padding:2px 6px;border-radius:3px;border:1px solid var(--border)">'+ex.label+': '+w+'kg</span>'}}
+    h+='</div></div>'
+  }
+  // Targets grid
+  h+='<div class="card"><div style="font-size:13px;font-weight:700;letter-spacing:1.5px;color:'+phase.rawColor+';margin-bottom:8px">THIS WEEK TARGETS</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">';
+  const allEx=[...SESSION_A,...SESSION_B.filter(e=>e.ex!=="toes_bar_b")];
+  for(const ex of allEx){if(ex.bw){h+='<div style="background:var(--bg);padding:10px;border-radius:8px;border:1px solid var(--border)"><div style="font-size:11px;color:var(--muted)">'+ex.label+'</div><div style="font-size:20px;font-weight:800">'+(T2B_REPS.A[S.week-1]||10)+' reps</div><div style="font-size:10px;color:var(--dim)">bodyweight</div></div>'}else{const t=SESSION_A.find(e=>e.ex===ex.ex)?"A":"B";const w=calcWeight(ex.ex,S.week,t,S.logs,S.base1rm,false);const p1=S.base1rm[ex.ex]?Math.round((w/S.base1rm[ex.ex])*100):"?";h+='<div style="background:var(--bg);padding:10px;border-radius:8px;border:1px solid var(--border)"><div style="font-size:11px;color:var(--muted)">'+ex.label+'</div><div style="font-size:20px;font-weight:800">'+w+' kg</div><div style="font-size:10px;color:var(--dim)">'+p1+'% of 1RM</div></div>'}}
+  h+='</div></div>';return h
+}
+
+function startSession(week,type){const key="w"+week+"_"+type;const existing=S.logs[key];let draft;
+  if(existing){draft=JSON.parse(JSON.stringify(existing));for(const ex of getExercises(type)){if(draft.sets[ex.ex])draft.sets[ex.ex].forEach(s=>{if(s.done===undefined)s.done=false})}}
+  else{draft={completed:false,date:new Date().toISOString().slice(0,10),notes:"",cfYesterday:false,sets:{}};for(const ex of getExercises(type))draft.sets[ex.ex]=buildSets(ex,week,type,S.logs,S.base1rm,false)}
+  S.active={week,type};S.draft=draft;S.cfYesterday=draft.cfYesterday||false;S.warmup=false;S.cooldown=false;S.editing=null;S.showRPE=false;render()}
+
+function editSession(key){const log=S.logs[key];if(!log)return;const match=key.match(/w(\d+)_(A|B|PlanB)/);const week=parseInt(match[1]),type=match[2];
+  const draft=JSON.parse(JSON.stringify(log));for(const ex of getExercises(type)){if(draft.sets[ex.ex])draft.sets[ex.ex].forEach(s=>{if(s.done===undefined)s.done=!!log.completed})}
+  S.editing=key;S.active={week,type};S.draft=draft;S.cfYesterday=draft.cfYesterday||false;S.warmup=false;S.cooldown=false;S.showRPE=false;render()}
+
+function renderLogger(){
+  const{week,type}=S.active;const phase=getPhase(week);const isDeload=DELOAD_WEEKS.includes(week);
+  const log=S.draft;const exs=getExercises(type);const sLabel=type==="PlanB"?"PLAN B":"SESSION "+type;const isEdit=!!S.editing;
+  let h='<div style="padding:14px;max-width:520px;margin:0 auto">';
+  h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><button class="btn" style="width:auto;padding:8px 14px;font-size:13px" onclick="closeLogger()">&larr; BACK</button><div style="text-align:right"><div style="font-size:17px;font-weight:800;color:'+phase.rawColor+'">'+(isEdit?"EDIT &middot; ":"")+'W'+week+' '+sLabel+'</div><div style="font-size:11px;color:var(--muted);font-family:JetBrains Mono,monospace">'+phase.name+' &middot; '+(isDeload?"DELOAD":phase.intensity)+'</div></div></div>';
+  // Timer
+  if(TM.running){const rem=Math.max(0,Math.ceil((TM.endTime-Date.now())/1000));const m=Math.floor(rem/60),s=rem%60;
+    h+='<div class="card" style="text-align:center;border:2px solid '+phase.rawColor+'"><div style="font-size:12px;font-weight:700;letter-spacing:2px;color:var(--muted)">REST &mdash; '+esc(TM.exLabel)+'</div><div id="td" class="timer-display" style="color:'+phase.rawColor+'">'+m+':'+String(s).padStart(2,"0")+'</div><div style="margin:8px 0"><div class="progress-bar-bg" style="height:10px"><div id="tb" class="progress-bar-fill" style="background:'+phase.rawColor+';width:0%"></div></div></div><button class="btn" style="width:auto;display:inline-block;padding:6px 20px;font-size:12px;color:var(--danger);border-color:var(--danger)" onclick="stopTimer();render()">SKIP</button></div>'}
+  // CF toggle
+  h+='<div class="card" style="padding:10px 14px;display:flex;justify-content:space-between;align-items:center;cursor:pointer;'+(S.cfYesterday?"border-left:4px solid var(--warning)":"")+'" onclick="toggleCF()"><div><div style="font-size:13px;font-weight:700;color:'+(S.cfYesterday?"var(--warning)":"var(--muted)")+'">CrossFit yesterday?</div>'+(S.cfYesterday?'<div style="font-size:11px;color:var(--warning)">Weights -5% &middot; RPE -1 &middot; T2B reps -15%</div>':'<div style="font-size:11px;color:var(--dim)">Adjusts weights, RPE and reps down</div>')+'</div><div class="toggle-track" style="background:'+(S.cfYesterday?"var(--warning)":"var(--border)")+'"><div class="toggle-thumb" style="'+(S.cfYesterday?"right:2px;left:auto":"left:2px")+'"></div></div></div>';
+  // RPE legend
+  h+='<div class="card" style="padding:10px 14px"><div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="up({showRPE:!S.showRPE})"><div style="font-size:12px;font-weight:700;color:'+phase.rawColor+';letter-spacing:1px">&#128202; RPE GUIDE</div><span style="color:var(--muted);font-size:14px">'+(S.showRPE?"&#9662;":"&#9656;")+'</span></div>';
+  if(S.showRPE){h+='<div style="margin-top:8px">';for(const r of RPE_LEGEND)h+='<div style="display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid var(--border)"><span style="background:'+r.color+';color:#fff;font-weight:800;font-size:13px;padding:2px 8px;border-radius:4px;min-width:36px;text-align:center;font-family:JetBrains Mono,monospace">'+r.val+'</span><span style="font-size:12px">'+r.desc+'</span></div>';h+='</div>'}
+  h+='</div>';
+  // Warmup
+  const wk=type==="PlanB"?"PlanB":type;
+  h+='<div class="card" style="border-left:4px solid var(--success)"><div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="up({warmup:!S.warmup})"><div style="font-size:12px;font-weight:700;color:var(--success);letter-spacing:1px">&#128293; WARM-UP</div><span style="color:var(--muted);font-size:14px">'+(S.warmup?"&#9662;":"&#9656;")+'</span></div>'+(S.warmup?'<div style="font-size:12px;color:var(--text);line-height:1.7;padding-top:8px">'+WARMUP[wk]+'</div>':'')+'</div>';
+  // Exercises
+  for(let i=0;i<exs.length;i++){
+    const ex=exs[i];const sets=log.sets[ex.ex]||[];const allDone=sets.length>0&&sets.every(s=>s.done);
+    const restSec=REST_TIMES[ex.ex]||120;const restMin=Math.floor(restSec/60);const restR=restSec%60;
+    h+='<div class="card" style="'+(allDone?"border-left:4px solid var(--success)":"border-left:4px solid "+phase.rawColor)+'">';
+    h+='<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px"><div><div style="font-size:15px;font-weight:800;color:'+(allDone?"var(--success)":phase.rawColor)+'">'+ex.label+(allDone?" &#10003;":"")+'</div><div style="font-size:11px;color:var(--muted)">'+ex.notes+'</div></div><div style="text-align:right">'+(ex.bw?'<span class="badge" style="background:var(--success);color:#fff">BW</span>':'')+'<div style="font-size:10px;color:var(--dim);margin-top:2px">Rest: '+restMin+':'+String(restR).padStart(2,"0")+'</div></div></div>';
+    h+='<div style="display:grid;grid-template-columns:28px 1fr 1fr 1fr 44px;gap:4px 6px;align-items:center"><div style="font-size:10px;color:var(--muted);text-align:center;font-weight:700">&#10003;</div><div style="font-size:10px;color:var(--muted);text-align:center;font-weight:700;letter-spacing:1px">'+(ex.bw?"":"KG")+'</div><div style="font-size:10px;color:var(--muted);text-align:center;font-weight:700;letter-spacing:1px">REPS</div><div style="font-size:10px;color:var(--muted);text-align:center;font-weight:700;letter-spacing:1px">RPE</div><div style="font-size:10px;color:var(--muted);text-align:center;font-weight:700">REST</div>';
+    for(let s=0;s<sets.length;s++){const set=sets[s];
+      h+='<input type="checkbox" class="set-check" '+(set.done?"checked":"")+" onchange=\"toggleDone('"+ex.ex+"',"+s+')\">';
+      if(ex.bw)h+='<div style="text-align:center;font-size:14px;font-weight:700;color:var(--dim)">BW</div>';
+      else h+='<input class="input" style="font-size:15px;padding:6px 4px" type="number" value="'+set.weight+"\" onchange=\"setVal('"+ex.ex+"',"+s+",'weight',this.value)\">";
+      h+='<input class="input" style="font-size:15px;padding:6px 4px" type="number" value="'+set.reps+"\" onchange=\"setVal('"+ex.ex+"',"+s+",'reps',this.value)\">";
+      h+='<select class="input" style="font-size:12px;padding:6px 2px;color:'+rpeColor(set.rpe)+";font-weight:800\" onchange=\"setVal('"+ex.ex+"',"+s+",'rpe',this.value)\">";
+      for(const v of RPE_LEGEND)h+='<option value="'+v.val+'" '+(set.rpe===v.val?"selected":"")+'>'+v.val+'</option>';
+      h+='</select>';
+      h+="<button class=\"btn\" style=\"padding:4px;font-size:16px;border-color:"+phase.rawColor+";color:"+phase.rawColor+"\" onclick=\"startTimer("+restSec+",'"+ex.label.replace(/'/g,"")+"')\">&#9201;</button>"}
+    h+='</div></div>'
+  }
+  // Cooldown
+  h+='<div class="card" style="border-left:4px solid #2563EB"><div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="up({cooldown:!S.cooldown})"><div style="font-size:12px;font-weight:700;color:#2563EB;letter-spacing:1px">&#10052; COOLDOWN</div><span style="color:var(--muted);font-size:14px">'+(S.cooldown?"&#9662;":"&#9656;")+'</span></div>'+(S.cooldown?'<div style="font-size:12px;color:var(--text);line-height:1.7;padding-top:8px">'+COOLDOWN[wk]+'</div>':'')+'</div>';
+  // Notes
+  h+='<div class="card"><div style="font-size:12px;font-weight:700;letter-spacing:1.5px;color:var(--muted);margin-bottom:8px">SESSION NOTES</div><textarea class="input" id="snotes" style="text-align:left;min-height:60px;resize:vertical;font-size:13px;font-family:Barlow Condensed,sans-serif" placeholder="How did it feel?">'+esc(log.notes||"")+'</textarea></div>';
+  h+='<div style="display:flex;gap:8px;margin-bottom:20px"><button class="btn" style="flex:1;background:var(--warning);border-color:var(--warning);color:#fff" onclick="saveDraft()">'+(isEdit?"SAVE CHANGES":"SAVE DRAFT")+'</button><button class="btn" style="flex:1;background:'+phase.rawColor+';border-color:'+phase.rawColor+';color:#fff" onclick="completeSession()">COMPLETE &#10003;</button></div></div>';
+  return h
+}
+function bindLogger(){const n=document.getElementById("snotes");if(n)n.addEventListener("input",e=>{S.draft.notes=e.target.value})}
+function setVal(ex,si,field,val){if(S.draft)S.draft.sets[ex][si][field]=val}
+function toggleDone(ex,si){if(!S.draft)return;S.draft.sets[ex][si].done=!S.draft.sets[ex][si].done;render()}
+function toggleCF(){S.cfYesterday=!S.cfYesterday;if(!S.draft)return;S.draft.cfYesterday=S.cfYesterday;const{week,type}=S.active;for(const ex of getExercises(type)){const ns=buildSets(ex,week,type,S.logs,S.base1rm,S.cfYesterday);const old=S.draft.sets[ex.ex]||[];S.draft.sets[ex.ex]=ns.map((n,i)=>{if(i<old.length&&old[i].done)return old[i];return{...n,done:old[i]?.done||false}})}render()}
+function saveDraft(){const{week,type}=S.active;const key=S.editing||"w"+week+"_"+type;S.draft.completed=S.editing?S.draft.completed:false;S.draft.date=S.draft.date||new Date().toISOString().slice(0,10);S.logs[key]=JSON.parse(JSON.stringify(S.draft));persist();toast(S.editing?"Changes saved":"Draft saved");if(S.editing){S.editing=null;S.active=null;S.draft=null}}
+function completeSession(){const{week,type}=S.active;const key=S.editing||"w"+week+"_"+type;S.draft.completed=true;S.draft.date=S.draft.date||new Date().toISOString().slice(0,10);S.logs[key]=JSON.parse(JSON.stringify(S.draft));for(const ex of getExercises(type)){if(ex.bw)continue;const sets=S.draft.sets[ex.ex]||[];for(const s of sets){const w=parseFloat(s.weight)||0;if(w>0&&(!S.prs[ex.ex]||w>S.prs[ex.ex].weight)){S.prs[ex.ex]={weight:w,week,type,date:S.draft.date};toast("NEW PR: "+ex.label+" - "+w+"kg!")}}}persist();stopTimer();S.active=null;S.draft=null;S.editing=null;toast("Session logged")}
+function closeLogger(){stopTimer();S.active=null;S.draft=null;S.editing=null;render()}
+
+// History
+function renderHistory(phase){
+  const keys=Object.keys(S.logs).sort((a,b)=>{return parseInt(b.match(/w(\d+)/)?.[1]||0)-parseInt(a.match(/w(\d+)/)?.[1]||0)});
+  let h='<div style="font-size:13px;font-weight:700;letter-spacing:1.5px;color:'+phase.rawColor+';margin-bottom:8px">SESSION HISTORY</div>';
+  if(!keys.length){h+='<div class="card"><div style="text-align:center;color:var(--muted);padding:20px;font-size:13px">No sessions logged yet.</div></div>';return h}
+  for(const key of keys){const log=S.logs[key];const match=key.match(/w(\d+)_(A|B|PlanB)/);const week=parseInt(match[1]),type=match[2];const p=getPhase(week);const label=type==="PlanB"?"Plan B":"Session "+type;
+    h+='<div class="card" style="border-left:4px solid '+(log.completed?"var(--success)":"var(--warning)")+'">';
+    h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><div><div style="font-size:15px;font-weight:700;color:'+p.rawColor+'">Week '+week+' &middot; '+label+'</div><div style="font-size:11px;color:var(--muted)">'+(log.date||"-")+' &middot; '+p.name+(log.cfYesterday?" &middot; &#9889;CF":"")+'</div></div>'+(log.completed?'<span class="badge" style="background:var(--success);color:#fff">DONE</span>':'<span class="badge" style="background:var(--warning);color:#fff">DRAFT</span>')+'</div>';
+    const exs=getExercises(type);for(const ex of exs){const sets=log.sets?.[ex.ex]||[];if(!sets.length)continue;const maxW=ex.bw?"BW":Math.max(0,...sets.map(s=>parseFloat(s.weight)||0))+"kg";const avgRpe=sets.map(s=>parseFloat(s.rpe)||0).filter(v=>v>0);const rpeStr=avgRpe.length?(avgRpe.reduce((a,b)=>a+b,0)/avgRpe.length).toFixed(1):"-";
+      h+='<div style="display:flex;justify-content:space-between;font-size:12px;padding:3px 0;border-bottom:1px solid var(--border)"><span style="font-weight:600">'+ex.label+'</span><span style="color:var(--muted)">'+sets.length+'&times;'+(sets[0]?.reps||"?")+" @ "+maxW+" &middot; RPE "+rpeStr+'</span></div>'}
+    if(log.notes)h+='<div style="font-size:11px;color:var(--muted);margin-top:4px;font-style:italic">"'+esc(log.notes)+'"</div>';
+    h+='<div style="display:flex;gap:6px;margin-top:8px"><button class="btn" style="flex:1;padding:8px;font-size:12px;background:'+p.rawColor+';border-color:'+p.rawColor+';color:#fff" onclick="editSession(\''+key+'\')">EDIT &#9998;</button><button class="btn" style="flex:1;padding:8px;font-size:12px;color:var(--danger);border-color:var(--danger)" onclick="delLog(\''+key+'\')">DELETE &times;</button></div></div>'}
+  return h}
+function delLog(key){if(!confirm("Delete "+key+"?"))return;delete S.logs[key];persist();toast("Deleted")}
+
+// Progress
+function renderProgress(phase){
+  const exs=[{ex:"power_clean",label:"Power Clean"},{ex:"back_squat",label:"Back Squat"},{ex:"deadlift",label:"Deadlift"},{ex:"military",label:"Military Press"},{ex:"bench",label:"Bench Press"},{ex:"pull_ups",label:"Wtd Pull-ups"},{ex:"dips",label:"Wtd Dips"}];
+  let h='<div style="font-size:13px;font-weight:700;letter-spacing:1.5px;color:'+phase.rawColor+';margin-bottom:8px">PROGRESS</div>';
+  // PR card
+  h+='<div class="card"><div style="font-size:12px;font-weight:700;letter-spacing:1px;color:var(--muted);margin-bottom:8px">PERSONAL RECORDS</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">';
+  for(const e of exs){const pr=S.prs[e.ex];const bl=S.base1rm[e.ex]||DEFAULT_1RM[e.ex];h+='<div style="background:var(--bg);padding:8px;border-radius:6px;border:1px solid var(--border)"><div style="font-size:11px;color:var(--muted)">'+e.label+'</div><div style="font-size:18px;font-weight:800;color:'+(pr?"var(--success)":"var(--dim)")+'">'+(pr?pr.weight+"kg":"-")+'</div><div style="font-size:10px;color:var(--dim)">Base: '+bl+'kg'+(pr?" &middot; "+Math.round(((pr.weight-bl)/bl)*100)+"%":"")+'</div></div>'}
+  h+='</div></div>';
+  for(const e of exs){const data=[];for(let w=1;w<=12;w++){let mx=0;for(const t of["A","B","PlanB"]){const log=S.logs["w"+w+"_"+t];if(!log?.completed)continue;const sets=log.sets?.[e.ex]||[];const top=Math.max(0,...sets.map(s=>parseFloat(s.weight)||0));if(top>mx)mx=top}data.push({week:w,weight:mx})}
+    const bl=S.base1rm[e.ex]||DEFAULT_1RM[e.ex];const best=data.filter(d=>d.weight>0);const bestW=best.length?Math.max(...best.map(d=>d.weight)):0;
+    h+='<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><div style="font-size:15px;font-weight:700;color:'+phase.rawColor+'">'+e.label+'</div><div style="font-size:11px;color:var(--muted)">1RM: '+bl+'kg &middot; Best: '+(bestW>0?bestW+"kg":"-")+'</div></div>';
+    if(bestW>0)h+='<div class="progress-bar-bg"><div class="progress-bar-fill" style="width:'+Math.min(Math.round((bestW/bl)*100),100)+'%;background:'+phase.rawColor+'"></div></div>';
+    h+='<canvas id="c_'+e.ex+'" width="460" height="120" style="width:100%;height:120px;margin-top:8px"></canvas></div>'}
+  return h}
+
+function drawCharts(phase){
+  for(const ex of["power_clean","back_squat","deadlift","military","bench","pull_ups","dips"]){
+    const cv=document.getElementById("c_"+ex);if(!cv)continue;const ctx=cv.getContext("2d");const W=cv.width=cv.offsetWidth*2,H=cv.height=240;ctx.clearRect(0,0,W,H);
+    const data=[];for(let wk=1;wk<=12;wk++){let mx=0;for(const t of["A","B","PlanB"]){const log=S.logs["w"+wk+"_"+t];if(!log?.completed)continue;const sets=log.sets?.[ex]||[];const top=Math.max(0,...sets.map(s=>parseFloat(s.weight)||0));if(top>mx)mx=top}data.push({week:wk,weight:mx})}
+    if(!data.some(d=>d.weight>0)){ctx.fillStyle="#9CA3AF";ctx.font="24px 'Barlow Condensed'";ctx.textAlign="center";ctx.fillText("No data yet",W/2,H/2+8);continue}
+    const ws=data.filter(d=>d.weight>0).map(d=>d.weight);const baseline=S.base1rm[ex]||DEFAULT_1RM[ex];
+    const mn=Math.floor(Math.min(Math.min(...ws),baseline*.65)/5)*5;const mx=Math.ceil(Math.max(Math.max(...ws),baseline*.85)/5)*5;
+    const pL=56,pR=20,pT=20,pB=30,pw=W-pL-pR,ph=H-pT-pB;
+    // Y grid
+    const yInc=Math.ceil((mx-mn)/5/5)*5||5;ctx.textAlign="right";ctx.textBaseline="middle";
+    for(let v=mn;v<=mx;v+=yInc){const y=pT+ph-((v-mn)/(mx-mn))*ph;ctx.strokeStyle="#D4D4D0";ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(pL,y);ctx.lineTo(W-pR,y);ctx.stroke();ctx.fillStyle="#6B7280";ctx.font="20px 'JetBrains Mono'";ctx.fillText(v+"",pL-8,y)}
+    // Baseline line
+    const blY=pT+ph-((baseline-mn)/(mx-mn))*ph;if(blY>pT&&blY<pT+ph){ctx.strokeStyle="#DC2626";ctx.lineWidth=2;ctx.setLineDash([8,4]);ctx.beginPath();ctx.moveTo(pL,blY);ctx.lineTo(W-pR,blY);ctx.stroke();ctx.setLineDash([]);ctx.fillStyle="#DC2626";ctx.font="18px 'Barlow Condensed'";ctx.textAlign="left";ctx.fillText("1RM: "+baseline+"kg",pL+4,blY-8);ctx.textAlign="right"}
+    // Line
+    ctx.strokeStyle=phase.rawColor;ctx.lineWidth=4;ctx.beginPath();let first=true;
+    for(const d of data){if(!d.weight)continue;const x=pL+((d.week-1)/11)*pw;const y=pT+ph-((d.weight-mn)/(mx-mn))*ph;if(first){ctx.moveTo(x,y);first=false}else ctx.lineTo(x,y)}ctx.stroke();
+    // Dots + labels
+    ctx.fillStyle=phase.rawColor;ctx.font="bold 18px 'JetBrains Mono'";ctx.textAlign="center";
+    for(const d of data){if(!d.weight)continue;const x=pL+((d.week-1)/11)*pw;const y=pT+ph-((d.weight-mn)/(mx-mn))*ph;ctx.beginPath();ctx.arc(x,y,6,0,Math.PI*2);ctx.fill();ctx.fillText(d.weight+"",x,y-14);ctx.fillStyle=phase.rawColor}
+    // X labels
+    ctx.fillStyle="#6B7280";ctx.font="18px 'JetBrains Mono'";ctx.textAlign="center";for(let wk=1;wk<=12;wk++){const x=pL+((wk-1)/11)*pw;ctx.fillText("W"+wk,x,H-4)}
+    // Y title
+    ctx.save();ctx.translate(14,H/2);ctx.rotate(-Math.PI/2);ctx.fillStyle="#9CA3AF";ctx.font="18px 'Barlow Condensed'";ctx.textAlign="center";ctx.fillText("kg",0,0);ctx.restore()}}
+
+// Source tab
+function renderSource(phase){
+  return '<div style="font-size:13px;font-weight:700;letter-spacing:1.5px;color:'+phase.rawColor+';margin-bottom:12px">SCIENCE &amp; METHODOLOGY</div>'+
+  '<div class="card source-section"><h3 style="color:'+phase.rawColor+'">Periodization Model</h3><p>This programme uses <strong>block periodization</strong> across 12 weeks, divided into three 4-week mesocycles: Accumulation (volume), Intensification (load), and Peaking (near-max). Each block ends with a deload week. This approach is well-supported for advanced athletes who need concentrated training stimuli to continue adapting.</p><div class="source-ref">Issurin, V. (2010). New horizons for the methodology and physiology of training periodization. Sports Medicine, 40(3), 189-206.<br>Painter, K.B. et al. (2012). Strength gains: Block versus daily undulating periodization. IJSPP, 7(3), 233-239.</div></div>'+
+  '<div class="card source-section"><h3 style="color:'+phase.rawColor+'">Progressive Overload</h3><p>The adaptive engine increases working weights based on your logged RPE each session. If RPE was &le;7 (felt easy), it adds a double increment. If RPE was 7-8.5 (target range), it adds the standard increment. If RPE was &ge;8.5 or reps were missed, weight holds. Two consecutive holds trigger a 5% deload &mdash; a form of autoregulated fatigue management.</p><p><strong>Exercise-specific increments</strong> reflect real-world strength gain rates: larger lifts (squat, deadlift) progress at 2.5kg/week while overhead press uses 0.75kg and bodyweight additions use 1.0kg.</p><div class="source-ref">Helms, E.R. et al. (2016). Application of the repetitions in reserve-based RPE scale for resistance training. SCJ, 38(4), 42-49.<br>Zourdos, M.C. et al. (2016). Novel resistance training-specific RPE scale. JSCR, 30(1), 267-275.</div></div>'+
+  '<div class="card source-section"><h3 style="color:'+phase.rawColor+'">Phase Intensity Bands</h3><p><strong>Accumulation (W1-4):</strong> 70-80% of 1RM, 4-5 sets, higher reps (5 reps). Builds work capacity and movement quality. RPE target: 7.</p><p><strong>Intensification (W5-8):</strong> 80-90% of 1RM, using Daily Undulating Periodization (DUP) between sessions. Session A is heavier/lower reps, Session B is moderate/more volume. RPE target: 8.</p><p><strong>Peaking (W9-12):</strong> 87-97% of 1RM, reduced sets (2-3), low reps (2-3). Maximizes neuromuscular efficiency. RPE target: 9. Week 12 is a deload before testing.</p><div class="source-ref">Rhea, M.R. et al. (2002). A comparison of linear and daily undulating periodized programs with equated volume and intensity for strength. JSCR, 16(2), 250-255.</div></div>'+
+  '<div class="card source-section"><h3 style="color:'+phase.rawColor+'">Phase Ceilings (Safety Caps)</h3><p>The engine never pushes working sets beyond a phase-specific ceiling of your 1RM, even if the adaptive logic would suggest it. Olympic lifts (power clean) and overhead press are capped at 80% / 87% / 88% across the three phases &mdash; technique degrades significantly above 88% in working sets. Compound lifts (squat, deadlift, bench) use 82% / 92% / 95%.</p><div class="source-ref">Suchomel, T.J. et al. (2017). The importance of muscular strength: Training considerations. Sports Medicine, 48(4), 765-785.</div></div>'+
+  '<div class="card source-section"><h3 style="color:'+phase.rawColor+'">Deload Protocol</h3><p>Every 4th week (W4, W8, W12) is a deload: same working weights, but volume drops by ~40% (fewer sets). This allows accumulated fatigue to dissipate while maintaining neuromuscular patterns. The adaptive engine also triggers a micro-deload (&minus;5%) when you stall at the same weight for two consecutive sessions.</p><div class="source-ref">Pritchard, H.J. et al. (2015). Tapering practices of New Zealand elite raw powerlifters. JSCR, 29(7), 1828-1836.</div></div>'+
+  '<div class="card source-section"><h3 style="color:'+phase.rawColor+'">CrossFit Fatigue Adjustment</h3><p>The "CrossFit yesterday" toggle reduces all working weights by 5%, drops target RPE by 1, and reduces T2B reps by 15%. This accounts for residual fatigue from metabolic conditioning and high-rep work in CrossFit WODs, which can impair maximal strength output for 24-48 hours.</p><div class="source-ref">Haddock, B.L. &amp; Wilkin, L.D. (2006). Resistance training volume and post exercise energy expenditure. IJSM, 27(2), 143-148.</div></div>'+
+  '<div class="card source-section"><h3 style="color:'+phase.rawColor+'">Rest Periods</h3><p>Rest intervals are set per exercise based on force demands: 3:00-3:30 for heavy compounds (squat, deadlift, clean), 2:00-2:30 for presses and weighted bodyweight movements, 1:30 for toes-to-bar. Longer rest allows fuller phosphocreatine resynthesis, critical for maintaining force output across sets.</p><div class="source-ref">Schoenfeld, B.J. et al. (2016). Longer interset rest periods enhance muscle strength and hypertrophy. JSCR, 30(7), 1805-1812.<br>de Salles, B.F. et al. (2009). Rest interval between sets in strength training. Sports Medicine, 39(9), 765-777.</div></div>'+
+  '<div class="card source-section"><h3 style="color:'+phase.rawColor+'">RPE Scale</h3><p>This tracker uses the <strong>Repetitions in Reserve (RIR)</strong> based RPE scale developed by Zourdos et al. RPE 7 means "could do 3 more reps", RPE 8 means "could do 2 more", RPE 9 means "could do 1 more", RPE 10 is a true max effort. This is more reliable and repeatable than the traditional Borg scale for resistance training.</p><div class="source-ref">Zourdos, M.C. et al. (2016). Novel resistance training-specific RPE scale. JSCR, 30(1), 267-275.<br>Helms, E.R. et al. (2017). RPE and velocity relationships for the back squat, bench press, and deadlift. JSCR, 31(2), 292-297.</div></div>'+
+  '<div class="card source-section"><h3 style="color:'+phase.rawColor+'">Exercise Selection</h3><p>Compound multi-joint exercises that complement CrossFit. Power clean builds explosive hip extension for WODs. Squat and deadlift build posterior chain. Military press and bench develop pressing capacity. Weighted pull-ups/dips build relative upper body strength. Toes-to-bar trains the gymnastics kip pattern and core strength used in competition.</p><div class="source-ref">Feito, Y. et al. (2018). High-intensity functional training (HIFT): Definition and research implications. Sports, 6(3), 76.</div></div>'}
+
+// Settings
+function renderSettings(phase){
+  const exList=[{id:"power_clean",lb:"Power Clean",n:"Olympic lift"},{id:"back_squat",lb:"Back Squat",n:"Large compound"},{id:"deadlift",lb:"Deadlift",n:"Largest lift"},{id:"military",lb:"Military Press",n:"Overhead"},{id:"bench",lb:"Bench Press",n:"Horizontal push"},{id:"pull_ups",lb:"Wtd Pull-ups",n:"Added weight"},{id:"dips",lb:"Wtd Dips",n:"Added weight"}];
+  let h='<div class="card" style="border-left:4px solid '+phase.rawColor+'"><div style="display:flex;justify-content:space-between;align-items:center"><div><div style="font-size:20px;font-weight:800;color:'+phase.rawColor+'">CYCLE '+S.cycle+'</div><div style="font-size:12px;color:var(--muted)">12-week programme &middot; Week '+S.week+'</div></div><div style="font-size:36px;font-weight:800;color:'+phase.rawColor+'20">#'+S.cycle+'</div></div></div>';
+  h+='<div class="card"><div style="font-size:13px;font-weight:700;letter-spacing:1.5px;color:'+phase.rawColor+';margin-bottom:8px">BASELINE 1RM (KG)</div><div style="font-size:12px;color:var(--muted);margin-bottom:10px">Edit before starting a new cycle.</div>';
+  for(const ex of exList)h+='<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border)"><div style="flex:1"><div style="font-size:14px;font-weight:700">'+ex.lb+'</div><div style="font-size:10px;color:var(--dim)">'+ex.n+'</div></div><input class="input" type="number" style="width:76px;font-size:17px" value="'+(S.base1rm[ex.id]||"")+'" onchange="S.base1rm[\''+ex.id+'\']=parseFloat(this.value)||0"><span style="font-size:12px;color:var(--dim)">kg</span></div>';
+  h+='<button class="btn" style="margin-top:12px;background:'+phase.rawColor+';border-color:'+phase.rawColor+';color:#fff" onclick="persist();toast(\'1RM saved\')">SAVE 1RM CHANGES</button></div>';
+  h+='<div class="card"><div style="font-size:13px;font-weight:700;letter-spacing:1.5px;color:var(--warning);margin-bottom:8px">START NEW CYCLE</div><div style="font-size:12px;color:var(--muted);line-height:1.5;margin-bottom:10px">Resets all logs. Export data first.</div>';
+  if(!S.confirmReset)h+='<button class="btn" style="background:var(--warning);border-color:var(--warning);color:#fff" onclick="up({confirmReset:true})">START CYCLE '+(S.cycle+1)+' &rarr;</button>';
+  else h+='<div style="font-size:12px;color:var(--danger);margin-bottom:8px;font-weight:700">&#9888; This clears all session logs permanently.</div><div style="display:flex;gap:8px"><button class="btn" style="flex:1" onclick="up({confirmReset:false})">CANCEL</button><button class="btn" style="flex:1;background:var(--danger);border-color:var(--danger);color:#fff" onclick="newCycle()">CONFIRM RESET</button></div>';
+  h+='</div>';
+  h+='<div class="card"><div style="font-size:13px;font-weight:700;letter-spacing:1.5px;color:'+phase.rawColor+';margin-bottom:8px">DATA BACKUP</div><div style="font-size:12px;color:var(--muted);margin-bottom:10px">Export/import full training data as JSON.</div><div style="display:flex;gap:8px"><button class="btn" style="flex:1;background:var(--success);border-color:var(--success);color:#fff" onclick="exportJSON()">EXPORT</button><button class="btn" style="flex:1" onclick="document.getElementById(\'imp\').click()">IMPORT</button></div><input type="file" id="imp" accept=".json" style="display:none" onchange="importJSON(event)"></div>';
+  h+='<div class="card" style="opacity:.7"><div style="font-size:12px;font-weight:700;letter-spacing:1px;color:var(--muted);margin-bottom:4px">STORAGE</div><div style="font-size:11px;color:var(--dim);line-height:1.6">localStorage on this device/browser. Use Export for backups.<br>Sessions: '+Object.keys(S.logs).length+' &middot; PRs: '+Object.keys(S.prs).length+'</div></div>';
+  return h}
+function newCycle(){S.logs={};S.prs={};S.week=1;S.cycle++;S.confirmReset=false;persist();toast("Cycle "+S.cycle+" started!")}
+function exportJSON(){const d={version:3,exported:new Date().toISOString(),cycle:S.cycle,base1rm:S.base1rm,logs:S.logs,prs:S.prs,week:S.week};const b=new Blob([JSON.stringify(d,null,2)],{type:"application/json"});const a=document.createElement("a");a.href=URL.createObjectURL(b);a.download="scf_c"+S.cycle+"_"+new Date().toISOString().slice(0,10)+".json";a.click();toast("Exported")}
+function importJSON(ev){const f=ev.target.files[0];if(!f)return;const r=new FileReader();r.onload=e=>{try{const d=JSON.parse(e.target.result);if(d.logs)S.logs=d.logs;if(d.prs)S.prs=d.prs;if(d.base1rm)S.base1rm=d.base1rm;if(d.cycle)S.cycle=d.cycle;if(d.week)S.week=d.week;persist();toast("Imported");render()}catch{toast("Invalid JSON")}};r.readAsText(f);ev.target.value=""}
+
+render();
+</script>
+</body>
+</html>
