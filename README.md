@@ -1,4 +1,4 @@
-# Weightlifting — User Guide
+# Weightlifting Tracker — User Guide
 
 A mobile-first progressive overload tracker built around block periodization. The app runs entirely in the browser with no installation required, and all data is stored locally on your device.
 
