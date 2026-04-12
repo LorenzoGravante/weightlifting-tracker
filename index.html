@@ -132,7 +132,7 @@ function render(){
   const app=document.getElementById("app");let h="";
   if(S.toast)h+='<div class="toast">'+esc(S.toast)+'</div>';
   if(S.active||S.editing){h+=renderLogger();app.innerHTML=h;bindLogger();return}
-  h+='<div style="padding:16px 16px 0;text-align:center"><div style="font-size:22px;font-weight:800;letter-spacing:3px;color:'+phase.rawColor+'">STRENGTH + CF</div><div style="font-size:11px;color:var(--muted);letter-spacing:2px;font-family:JetBrains Mono,monospace;margin-top:2px">CYCLE '+S.cycle+' &middot; '+phase.name.toUpperCase()+' &middot; '+phase.intensity+'</div></div>';
+  h+='<div style="padding:16px 16px 0;text-align:center"><div style="font-size:22px;font-weight:800;letter-spacing:3px;color:'+phase.rawColor+'">WEIGHTLIFTING TRACKER</div><div style="font-size:11px;color:var(--muted);letter-spacing:2px;font-family:JetBrains Mono,monospace;margin-top:2px">CYCLE '+S.cycle+' &middot; '+phase.name.toUpperCase()+' &middot; '+phase.intensity+'</div></div>';
   const tabs=[["schedule","SCHEDULE"],["log","HISTORY"],["progress","PROGRESS"],["source","SOURCE"],["settings","SETTINGS"]];
   h+='<div class="nav">';for(const[id,lb]of tabs)h+='<button class="'+(S.tab===id?"active":"")+'" onclick="up({tab:\''+id+'\'})">'+lb+'</button>';h+='</div><div class="content">';
   if(S.tab==="schedule")h+=renderSchedule(phase);
